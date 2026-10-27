@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#050a13">
+<title>JARVIS — Voice Assistant</title>
+<style>
+:root{color-scheme:dark;--bg:#050a13;--cyan:#4de7ff;--blue:#4b82ff;--muted:#9ab1c7}
+*{box-sizing:border-box}
+body{margin:0;min-height:100vh;background:radial-gradient(ellipse at 50% 35%,#10294a 0%,#07111f 42%,var(--bg) 78%);color:#eef8ff;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;display:flex;justify-content:center}
+.app{width:min(100%,650px);min-height:100vh;padding:22px 18px calc(24px + env(safe-area-inset-bottom));display:flex;flex-direction:column;align-items:center}
+header{width:100%;display:flex;justify-content:space-between;align-items:center}
+.brand{font-size:14px;letter-spacing:.28em;font-weight:800;color:var(--cyan)}
+.status{font-size:12px;color:var(--muted);border:1px solid #25435b;border-radius:99px;padding:7px 10px}
+h1{font-size:clamp(25px,6vw,36px);letter-spacing:.12em;margin:26px 0 4px;font-weight:600}
+.sub{font-size:13px;color:var(--muted);margin:0}
+.core-wrap{position:relative;width:min(66vw,260px);aspect-ratio:1;margin:32px auto 22px;display:grid;place-items:center}
+.ring{position:absolute;inset:0;border:1px solid #1c6388;border-radius:50%;box-shadow:0 0 28px #1c9dff20,inset 0 0 25px #1c9dff12;animation:spin 18s linear infinite}
+.ring:before,.ring:after{content:"";position:absolute;border:1px dashed #45cfff70;border-radius:50%;inset:12%;transform:rotate(35deg)}
+.ring:after{inset:23%;border-style:solid;border-color:#315cba;transform:rotate(-35deg)}
+.core{width:43%;aspect-ratio:1;border-radius:50%;background:radial-gradient(circle at 35% 30%,#d8ffff 0%,#4de7ff 8%,#1676c5 38%,#07162e 72%);box-shadow:0 0 22px #4de7ffb0,0 0 65px #1676c580;position:relative}
+.core:after{content:"";position:absolute;inset:19%;border:1px solid #d8ffffaa;border-radius:50%;box-shadow:0 0 18px #4de7ff}
+.listening .ring{animation-duration:3s;border-color:var(--cyan);box-shadow:0 0 35px #4de7ff40}
+.listening .core{animation:pulse 1s ease-in-out infinite}
+@keyframes spin{to{transform:rotate(360deg)}}@keyframes pulse{50%{transform:scale(1.12);filter:brightness(1.35)}}
+.controls{display:flex;gap:12px;align-items:center;justify-content:center;flex-wrap:wrap}
+button{font:inherit;border:1px solid #28779a;background:#0b2035;color:#eafaff;padding:13px 17px;border-radius:14px;cursor:pointer;min-height:48px}
+button:active{transform:scale(.98)}
+.primary{background:linear-gradient(135deg,#087fa5,#2558b8);border-color:#54dcff;box-shadow:0 0 22px #128fc733;font-weight:700;min-width:155px}
+button:disabled{opacity:.45;cursor:not-allowed}
+.panel{width:100%;margin-top:22px;background:#071321c9;border:1px solid #1a3c54;border-radius:18px;padding:15px}
+.panel-title{font-size:11px;letter-spacing:.18em;color:var(--cyan);margin-bottom:9px}
+#reply{font-size:15px;line-height:1.55;white-space:pre-wrap;min-height:48px}
+#heard{font-size:13px;line-height:1.5;color:#a7bdd0;min-height:20px;margin-top:10px}
+.manual{display:flex;gap:8px;margin-top:12px;width:100%}
+input{flex:1;min-width:0;background:#040b14;border:1px solid #25445a;border-radius:12px;padding:12px;color:white;font:inherit}
+.note{color:#7f9ab0;font-size:11px;line-height:1.5;text-align:center;margin:16px 0 0}
+footer{margin-top:auto;padding-top:24px;color:#58758c;font-size:10px;letter-spacing:.15em}
+@media(min-height:800px){.core-wrap{margin-top:44px;margin-bottom:30px}}
+</style>
+</head>
+<body>
+<main class="app">
+<header><div class="brand">J.A.R.V.I.S.</div><div class="status" id="status">SYSTEM READY</div></header>
+<h1>GOOD DAY.</h1><p class="sub">JUST A RATHER VERY INTELLIGENT SYSTEM</p>
+<div class="core-wrap" id="coreWrap"><div class="ring"></div><div class="core"></div></div>
+<div class="controls">
+<button class="primary" id="talkBtn">🎙 TAP TO SPEAK</button>
+<button id="stopBtn" disabled>■ Stop voice</button>
+</div>
+<section class="panel">
+<div class="panel-title">JARVIS RESPONSE</div>
+<div id="reply">At your service. Tap the microphone and speak, or type a message below.</div>
+<div id="heard"></div>
+<div class="manual"><input id="textInput" placeholder="Type a message…" autocomplete="off"><button id="sendBtn">Send</button></div>
+</section>
+<p class="note">VOICE STYLE: LOW, DELIBERATE, SYNTHETIC. VOICE CHARACTERISTICS DEPEND ON YOUR DEVICE.</p>
+<footer>PERSONAL ASSISTANT • PROTOTYPE 01</footer>
+</main>
+<script>
+(() => {
+ const $ = id => document.getElementById(id);
+ const reply = $('reply'), heard = $('heard'), status = $('status'), talkBtn = $('talkBtn'), stopBtn = $('stopBtn');
+ let recognition = null, chosenVoice = null;
+ const synth = window.speechSynthesis;
+
+ function setStatus(s){ status.textContent = s; }
+ function chooseVoice(){
+   if(!synth) return;
+   const voices = synth.getVoices();
+   // Prefer English male-sounding voices when the device exposes useful names.
+   chosenVoice = voices.find(v => /^en/i.test(v.lang) && /male|david|mark|daniel|alex|guy|fred|aaron|james/i.test(v.name))
+      || voices.find(v => /^en/i.test(v.lang))
+      || voices[0] || null;
+ }
+ if(synth){ chooseVoice(); synth.onvoiceschanged = chooseVoice; }
+
+ function speak(text){
+   if(!synth){ setStatus('VOICE UNAVAILABLE'); return; }
+   synth.cancel();
+   const u = new SpeechSynthesisUtterance(text);
+   u.lang = 'en-US'; u.rate = 0.84; u.pitch = 0.55; u.volume = 1;
+   if(chosenVoice) u.voice = chosenVoice;
+   u.onstart = () => setStatus('SPEAKING');
+   u.onend = () => setStatus('SYSTEM READY');
+   synth.speak(u);
+ }
+ function respond(text, say=true){ reply.textContent = text; if(say) speak(text); }
+
+ function handleMessage(raw){
+   const q = raw.trim(), t = q.toLowerCase();
+   if(!q) return;
+   heard.textContent = 'YOU: ' + q;
+   if(/\b(hello|hi|hey)\b/.test(t)) return respond('Hello. I am online and ready to assist you.');
+   if(t.includes('your name') || t.includes('who are you')) return respond('I am JARVIS, your personal voice assistant prototype.');
+   if(t.includes('time')) return respond('The time on your device is ' + new Date().toLocaleTimeString([], {hour:'numeric',minute:'2-digit'}) + '.');
+   if(t.includes('date') || t.includes('day is it')) return respond('Today is ' + new Date().toLocaleDateString('en-US',{weekday:'long',year:'numeric',month:'long',day:'numeric'}) + '.');
+   if(t.includes('how are you')) return respond('All systems are running within normal parameters. Thank you for asking.');
+   if(t.includes('open youtube')) { respond('Opening YouTube.'); setTimeout(()=>window.open('https://m.youtube.com','_blank'),500); return; }
+   if(t.includes('open google')) { respond('Opening Google.'); setTimeout(()=>window.open('https://www.google.com','_blank'),500); return; }
+   if(t.includes('stop talking') || t === 'stop') { if(synth) synth.cancel(); setStatus('SYSTEM READY'); return respond('Voice output stopped.',false); }
+   if(t.includes('help') || t.includes('what can you do')) return respond('I can answer general questions using my AI connection, tell you the time and date, and open YouTube or Google. Ask me anything to get started.');
+   askAI(q);
+ }
+
+ async function askAI(question){
+   setStatus('THINKING');
+   respond('Processing your request…', false);
+   try {
+     const response = await fetch('/.netlify/functions/chat', {
+       method: 'POST',
+       headers: {'Content-Type':'application/json'},
+       body: JSON.stringify({message: question})
+     });
+     const data = await response.json();
+     if(!response.ok) throw new Error(data.error || 'Request failed');
+     respond(data.reply || 'I did not receive a response.');
+     setStatus('SYSTEM READY');
+   } catch (error) {
+     respond('I could not reach my AI brain. Please check the setup and try again. (' + error.message + ')', false);
+     setStatus('CONNECTION ERROR');
+   }
+ }
+
+ const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+ if(SpeechRecognition){
+   recognition = new SpeechRecognition();
+   recognition.lang = 'en-US'; recognition.continuous = false; recognition.interimResults = true; recognition.maxAlternatives = 1;
+   recognition.onstart = () => { $('coreWrap').classList.add('listening'); setStatus('LISTENING'); talkBtn.disabled = true; stopBtn.disabled = false; heard.textContent = 'Listening…'; };
+   recognition.onresult = e => {
+     let interim = '', finalText = '';
+     for(let i=e.resultIndex;i<e.results.length;i++){
+       if(e.results[i].isFinal) finalText += e.results[i][0].transcript;
+       else interim += e.results[i][0].transcript;
+     }
+     if(interim) heard.textContent = 'HEARING: ' + interim;
+     if(finalText) handleMessage(finalText);
+   };
+   recognition.onerror = e => { setStatus('VOICE ERROR'); heard.textContent = 'Voice input error: ' + e.error + '. Try again or type your message.'; };
+   recognition.onend = () => { $('coreWrap').classList.remove('listening'); talkBtn.disabled = false; stopBtn.disabled = true; if(status.textContent==='LISTENING') setStatus('SYSTEM READY'); };
+ } else {
+   talkBtn.disabled = true; talkBtn.textContent = '🎙 VOICE NOT SUPPORTED';
+   heard.textContent = 'Speech recognition is not available in this browser. Try opening this page in Chrome on Android, or type below.';
+ }
+ talkBtn.addEventListener('click', () => {
+   if(!recognition){return;}
+   try { recognition.start(); } catch(e) { heard.textContent = 'Please wait a moment and tap again.'; }
+ });
+ stopBtn.addEventListener('click', () => { if(recognition) recognition.stop(); if(synth) synth.cancel(); setStatus('SYSTEM READY'); });
+ $('sendBtn').addEventListener('click', () => { const v=$('textInput').value; $('textInput').value=''; handleMessage(v); });
+ $('textInput').addEventListener('keydown', e => { if(e.key==='Enter'){ e.preventDefault(); $('sendBtn').click(); } });
+})();
+</script>
+</body>
+</html>
